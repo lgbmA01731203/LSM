@@ -1,0 +1,9 @@
+opencv-python
+customtkinter
+scikit-learn
+torch
+numpy
+pillow
+onnxruntime-directml
+pyttsx3
+joblib
