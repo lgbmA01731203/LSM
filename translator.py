@@ -393,10 +393,10 @@ class LSMTranslator:
                         best_letter, best_conf = 's', min(0.95, conf)
 
             # --- B: All 4 straight, aligned, thumb folded ---
-            if all(r > 0.86 for r in ratios) and alignment > 0.82 and thumb_ratio < 0.82:
+            if all(r > 0.82 for r in ratios) and alignment > 0.78 and thumb_ratio < 0.88:
                 avg_str = np.mean(ratios)
-                conf = 0.70 + 0.20 * (avg_str - 0.86) / 0.14
-                conf += 0.10 * (alignment - 0.82) / 0.18
+                conf = 0.70 + 0.20 * (avg_str - 0.82) / 0.18
+                conf += 0.10 * (alignment - 0.78) / 0.22
                 if best_conf < conf:
                     best_letter, best_conf = 'b', min(0.95, conf)
 
@@ -505,14 +505,13 @@ class LSMTranslator:
                 if best_conf < conf:
                     best_letter, best_conf = 'w', min(0.95, conf)
 
-            # --- X: Index hooked (semi-bent), others curled ---
-            if 0.50 < idx_r < 0.75:
-                if all(r < 0.70 for r in [mid_r, ring_r, pinky_r]):
+            # --- X: Index hooked (semi-bent), others curled tightly ---
+            if 0.52 < idx_r < 0.72 and thumb_ratio < 0.65:
+                if all(r < 0.52 for r in [mid_r, ring_r, pinky_r]):
                     conf = 0.68
-                    # Best confidence when index is in the middle of the hook range
-                    hook_quality = 1.0 - abs(idx_r - 0.625) / 0.125
+                    hook_quality = 1.0 - abs(idx_r - 0.62) / 0.10
                     conf += 0.12 * max(0.0, hook_quality)
-                    conf += 0.05 * (1.0 - np.mean([mid_r, ring_r, pinky_r]) / 0.70)
+                    conf += 0.05 * (1.0 - np.mean([mid_r, ring_r, pinky_r]) / 0.52)
                     if best_conf < conf:
                         best_letter, best_conf = 'x', min(0.95, conf)
 
@@ -667,7 +666,7 @@ class LSMTranslator:
 
         # ---- B ↔ C ----
         if pred == 'b':
-            if mean_ratio < 0.82 or num_straight < 3 or thumb_ratio >= 0.82:
+            if mean_ratio < 0.78 or num_straight < 3 or thumb_ratio >= 0.88:
                 # Fingers not straight enough for B
                 if all(0.30 <= r <= 0.92 for r in ratios) and rotation_deg >= 35:
                     if 0.45 <= d_thumb_idx <= 1.50:
@@ -816,7 +815,7 @@ class LSMTranslator:
         elif pred == 'w':
             if pinky_r > 0.85:
                 # Pinky also straight → probably B
-                if alignment > 0.82 and thumb_ratio < 0.82:
+                if alignment > 0.78 and thumb_ratio < 0.88:
                     return 'b', conf * 0.85
                 return pred, conf * 0.70
 
