@@ -1,7 +1,0 @@
-torch
-numpy
-scikit-learn
-opencv-python
-joblib
-onnx
-onnxscript
