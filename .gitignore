@@ -43,11 +43,15 @@ MSL-dynamic-signs-frontal-view/
 MSL-dynamic-signs-profile/
 Mexican sign language dataset/
 data/
+data_nuevos/
+Nuevos_Dinamicos/
+LSM_Dataset/
 archive (2)/
 archive (3)/
 vanya_project/
 extracted_py/
 LSM_Release/
+scratch/
 
 # Heavy compressed archives
 *.7z
@@ -60,9 +64,21 @@ models/*.joblib
 models/*.pth
 models/*.keras
 models/*.onnx
+models/*.onnx.data
 hand_landmarker.task
+# EXCEPCIÓN: el modelo unificado funcional SÍ se incluye (es pequeño, ~12MB)
+!models/unified_model.pth
+!models/unified_classes.json
+# Los detectores ONNX se incluyen para que el repo funcione (~4MB c/u)
 palm_detection.onnx
 handpose_estimation_mediapipe_2023feb.onnx
+!palm_detection.onnx
+!handpose_estimation_mediapipe_2023feb.onnx
+
+# Backups y temporales
+*.bak
+_*.py
+_*.txt
 
 # OS files
 .DS_Store

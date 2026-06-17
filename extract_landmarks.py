@@ -7,14 +7,13 @@ them as .npy files for training the static letters classifier.
 Archives:
   - archive (3)/MSL-ABC/lsm-abc-{A,B,C}/{train,test}/{0..20}/*.jpg
 
-Class index → LSM letter mapping (21 classes):
-  0→a, 1→b, 2→c, 3→d, 4→e, 5→f, 6→g, 7→h, 8→i, 9→k,
-  10→l, 11→m, 12→n, 13→o, 14→p, 15→q, 16→r, 17→s, 18→t,
-  19→u, 20→v
+Class index → LSM letter mapping (21 classes, as in INDEX_TO_LETTER below):
+  0→a, 1→b, 2→c, 3→d, 4→e, 5→f, 6→g, 7→h, 8→i,
+  9→l, 10→m, 11→n, 12→o, 13→p, 14→r, 15→s, 16→t,
+  17→u, 18→v, 19→w, 20→y
 
-Note: J is excluded (dynamic letter), Ñ is excluded.
-      W, X, Y, Z are handled by rules only (no archive data).
-      Q and K appear in archives but are also trained as dynamic letters.
+Note: J excluded (dynamic). K, Q, X, Z excluded from static ML (dynamic/rules only).
+      Ñ excluded. W and Y are included as static classes.
 
 Usage:
   python extract_landmarks.py [--max-per-class 500] [--archive-dir "archive (3)"]

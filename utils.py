@@ -85,6 +85,28 @@ def normalize_sequence_wrists(sequence):
             
     return normalized_seq
 
+def compute_motion_features(seq: np.ndarray) -> np.ndarray:
+    """
+    Converts a (T, 126) position sequence into a (T, 378) motion-aware sequence
+    by appending per-frame velocity and acceleration channels.
+
+    Channels per frame:
+      [0:126]   — normalized positions  (same as input)
+      [126:252] — velocity  = pos[t] - pos[t-1]  (0 for t=0)
+      [252:378] — acceleration = vel[t] - vel[t-1] (0 for t=0,1)
+
+    These extra channels give the LSTM direct access to HOW FAST and HOW THE
+    SPEED CHANGES for every landmark — the primary discriminator between dynamic
+    signs that share a similar hand shape (e.g. j vs. z, q vs. k).
+    """
+    T = seq.shape[0]
+    vel = np.zeros_like(seq)
+    acc = np.zeros_like(seq)
+    vel[1:]  = seq[1:] - seq[:-1]
+    acc[2:]  = vel[2:] - vel[1:-1]
+    return np.concatenate([seq, vel, acc], axis=1).astype(np.float32)
+
+
 class HandLandmarkStabilizer:
     def __init__(self, alpha=0.3):
         self.alpha = alpha

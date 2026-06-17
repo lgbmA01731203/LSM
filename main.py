@@ -47,6 +47,18 @@ class LSMApp(ctk.CTk):
         self._rec_w = 0
         self._rec_h = 0
 
+        # ── Inference thread ─────────────────────────────────────────────
+        # The LSTM runs here, NEVER on the UI thread, so tkinter never freezes.
+        # UI thread writes latest features → inference thread reads & predicts
+        # → UI thread reads latest result.
+        self._inf_features   = None          # latest features from camera
+        self._inf_result     = (None, None, 0.0)  # latest prediction
+        self._inf_lock       = threading.Lock()
+        self._inf_running    = True
+        self._inf_thread     = threading.Thread(
+            target=self._inference_loop, daemon=True, name="InferenceThread"
+        )
+
         # Create Layout
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -65,7 +77,10 @@ class LSMApp(ctk.CTk):
         
         # Start camera pipeline
         self.pipeline.start()
-        
+
+        # Start inference thread (before UI loop)
+        self._inf_thread.start()
+
         # Begin UI update loop
         self.update_frame()
         
@@ -96,19 +111,14 @@ class LSMApp(ctk.CTk):
         self.lbl_side_title = ctk.CTkLabel(self.translate_sidebar, text="TRADUCCIÓN LSM", font=("Inter", 18, "bold"))
         self.lbl_side_title.grid(row=0, column=0, padx=10, pady=15)
         
-        # Translation Mode Selector
-        self.lbl_mode = ctk.CTkLabel(self.translate_sidebar, text="Modo de Traducción:", font=("Inter", 14))
-        self.lbl_mode.grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        
-        self.mode_var = ctk.StringVar(value="static")
-        self.mode_switch = ctk.CTkSegmentedButton(
-            self.translate_sidebar, 
-            values=["static", "dynamic"],
-            command=self.change_translation_mode,
-            variable=self.mode_var
+        # Modelo unificado — ya no hay selector de modo
+        self.lbl_mode = ctk.CTkLabel(
+            self.translate_sidebar,
+            text="Modelo Unificado LSM",
+            font=("Inter", 13),
+            text_color="gray"
         )
-        self.mode_switch.configure(values=["Letras", "Palabras"])
-        self.mode_switch.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
+        self.lbl_mode.grid(row=1, column=0, padx=10, pady=5, sticky="w")
         
         # Live Prediction Label
         self.lbl_prediction = ctk.CTkLabel(self.translate_sidebar, text="Seña Actual: ---", font=("Inter", 16, "bold"), text_color="#1F85DE")
@@ -274,28 +284,17 @@ class LSMApp(ctk.CTk):
         self.txt_train_logs.configure(state="disabled")
 
     def change_translation_mode(self, mode_alias):
-        # Mapping alias
-        if "Letras" in mode_alias:
-            self.translator.no_hand_counter = 0
-            self.translator.last_committed_letter = None
-            self.translator.letter_history.clear()
-            self.mode_var.set("static")
-        else:
-            self.translator.dynamic_cooldown = 0
-            self.translator.sequence.clear()
-            self.mode_var.set("dynamic")
+        # Modelo unificado — solo limpiamos el estado interno al cambiar
+        self.translator._reset()
             
     def update_model_status_label(self):
-        has_static = "Sí" if self.translator.static_classifier is not None else "No"
-        has_dyn_let = "Sí" if self.translator.dynamic_letters_model is not None else "No"
-        has_words = "Sí" if self.translator.words_model is not None else "No"
-        color = "#2ECC71" if (has_static == "Sí" or has_dyn_let == "Sí" or has_words == "Sí") else "#E74C3C"
-        
-        # Check CUDA
+        loaded = self.translator.model is not None
+        n_clases = len(self.translator.classes)
+        color = "#2ECC71" if loaded else "#E74C3C"
         cuda_status = "CUDA" if torch.cuda.is_available() else "CPU"
-        
+        estado = f"Sí ({n_clases} señas)" if loaded else "No"
         self.lbl_status.configure(
-            text=f"Modelos: L. Estáticas [{has_static}] | L. Dinámicas [{has_dyn_let}] | Palabras [{has_words}] | {cuda_status}",
+            text=f"Modelo Unificado: [{estado}] | {cuda_status}",
             text_color=color
         )
 
@@ -321,34 +320,48 @@ class LSMApp(ctk.CTk):
             self.recording_active = True
             self.btn_capture.configure(state="disabled", text="Grabando...")
             
+    def _inference_loop(self):
+        """Background thread: runs translator inference so UI never freezes."""
+        while self._inf_running:
+            features = self._inf_features
+            if features is not None:
+                result = self.translator.process_frame(features)
+                with self._inf_lock:
+                    # Only overwrite committed token if new one arrived
+                    prev_committed, prev_raw, _ = self._inf_result
+                    new_committed, new_raw, new_conf = result
+                    committed = new_committed if new_committed is not None else prev_committed
+                    self._inf_result = (committed, new_raw or prev_raw, new_conf)
+            time.sleep(0.008)  # ~120 Hz max, yields CPU between runs
+
     def update_frame(self):
         try:
             # 1. Fetch latest data from camera pipeline
             frame, features = self.pipeline.get_latest()
-            
-            # 2. Run real-time translation if data is ready
+
+            # 2. Feed features to inference thread (non-blocking write)
             if features is not None:
-                active_mode_raw = self.mode_var.get()
-                if active_mode_raw in ['Letras', 'static', 'Letra Estática']:
-                    active_mode = 'static'
-                else:
-                    active_mode = 'dynamic'
-                
-                # Check for hands present (at least one non-zero coordinate)
+                self._inf_features = features
+
+            # 3. Read latest inference result (non-blocking)
+            with self._inf_lock:
+                new_token, raw_prediction, confidence = self._inf_result
+                # Consume committed token so it fires only once
+                if new_token is not None:
+                    self._inf_result = (None, raw_prediction, confidence)
+
+            if features is not None:
+                # Check for hands present
                 hands_present = not np.all(features == 0)
-                
+
                 if hands_present:
                     self.last_hand_seen_time = time.time()
                     self.space_appended = False
                 else:
-                    # Auto-spacing logic: if hand is missing for > 2 seconds in static mode, append a space
-                    if active_mode == 'static' and not self.space_appended:
+                    if not self.space_appended:
                         if time.time() - self.last_hand_seen_time > 2.0:
                             self.add_space()
                             self.space_appended = True
-                
-                # Run inference
-                new_token, raw_prediction, confidence = self.translator.process_frame(features, mode=active_mode)
                 
                 # Get hand orientations
                 left_orient, right_orient = utils.get_hand_orientation(features)
@@ -380,11 +393,9 @@ class LSMApp(ctk.CTk):
                         self.lbl_orientation.configure(text="Orientación: --- (Sin mano)")
                         
                 if new_token:
-                    # If dynamic, append with space, if static, append directly
-                    if active_mode == 'dynamic':
-                        self.txt_translation.insert(tk.END, new_token + " ")
-                    else:
-                        self.txt_translation.insert(tk.END, new_token)
+                    # Palabras de más de 1 caracter llevan espacio; letras se concatenan
+                    sep = " " if len(new_token) > 1 else ""
+                    self.txt_translation.insert(tk.END, new_token + sep)
                     self.txt_translation.see(tk.END)
                     
                 # 3. Handle data collector recording logic
@@ -483,7 +494,7 @@ class LSMApp(ctk.CTk):
             
     def clear_text(self):
         self.txt_translation.delete("1.0", tk.END)
-        self.translator.last_committed_letter = None
+        self.translator.last_committed = None
         
     def speak_translation(self):
         text = self.txt_translation.get("1.0", tk.END).strip()
@@ -574,7 +585,7 @@ class LSMApp(ctk.CTk):
                 
                 if success:
                     # Reload models
-                    self.translator.load_models()
+                    self.translator.load_model()
                     self.update_model_status_label()
                     print("\n[Éxito] Entrenamiento finalizado y modelos cargados!")
                 else:
@@ -590,7 +601,7 @@ class LSMApp(ctk.CTk):
         threading.Thread(target=train_task, daemon=True).start()
 
     def on_close(self):
-        # Stop threads before closing
+        self._inf_running = False
         self.pipeline.stop()
         self.destroy()
 

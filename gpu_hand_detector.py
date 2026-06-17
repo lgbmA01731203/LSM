@@ -73,7 +73,7 @@ class GPUHandDetector:
                 print(f"[GPUHandDetector] Model files missing. Ensure {self.palm_model_path} and {self.hand_model_path} are in workspace.")
                 return False
                 
-            self.palm_detector = MPPalmDet(self.palm_model_path, scoreThreshold=0.4)
+            self.palm_detector = MPPalmDet(self.palm_model_path, scoreThreshold=0.3)
             self.hand_detector = MPHandPose(self.hand_model_path)
             self._available = True
             print("[GPUHandDetector] Initialized successfully on GPU.")
@@ -90,46 +90,32 @@ class GPUHandDetector:
 
     def detect(self, image_bgr: np.ndarray):
         """
-        Run palm detection + landmark estimation on a BGR image.
-        
-        Returns:
-            GPUHandDetectorResult object containing lists of normalized hand_landmarks and handedness.
+        Run palm detection + landmark estimation on every frame.
+        No caching — the original approach that works correctly with fast movement.
         """
         if not self._available:
             return GPUHandDetectorResult([], [])
 
         h, w, _ = image_bgr.shape
 
-        # 1. Palm detection -> bounding boxes
         palms = self.palm_detector.infer(image_bgr)
-        
-        hand_landmarks_list = []
-        handedness_list = []
 
-        # Only process up to 2 palms to limit computation and prevent false positive latency
+        hand_landmarks_list = []
+        handedness_list     = []
+
         for palm in palms[:2]:
-            # 2. Landmark extraction
             handpose = self.hand_detector.infer(image_bgr, palm)
             if handpose is not None:
-                # Extract screen landmarks [x1, y1, z1, x2, y2, z2, ...]
-                # Screen landmarks are at handpose[4:67]
                 landmarks_screen = handpose[4:67].reshape(21, 3)
-                
-                # Convert landmarks to normalized coordinates (0.0 to 1.0)
-                landmarks = []
-                for lm in landmarks_screen:
-                    # x and y normalized by image width and height, z normalized by width
-                    landmarks.append(Landmark(
-                        x=lm[0] / w,
-                        y=lm[1] / h,
-                        z=lm[2] / w
-                    ))
+                landmarks = [
+                    Landmark(x=lm[0] / w, y=lm[1] / h, z=lm[2] / w)
+                    for lm in landmarks_screen
+                ]
                 hand_landmarks_list.append(landmarks)
 
-                # Extract handedness score (handpose[-2])
-                raw_handedness = handpose[-2]
+                raw_handedness  = handpose[-2]
                 handedness_text = "Left" if raw_handedness <= 0.5 else "Right"
-                handedness_list.append([Category(handedness_text, score=float(raw_handedness))])
+                handedness_list.append([Category(handedness_text, float(raw_handedness))])
 
         return GPUHandDetectorResult(hand_landmarks_list, handedness_list)
 

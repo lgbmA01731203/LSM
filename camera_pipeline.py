@@ -14,7 +14,7 @@ PALM_MODEL_PATH = "palm_detection.onnx"
 POSE_MODEL_URL = "https://huggingface.co/opencv/handpose_estimation_mediapipe/resolve/main/handpose_estimation_mediapipe_2023feb.onnx"
 POSE_MODEL_PATH = "handpose_estimation_mediapipe_2023feb.onnx"
 
-# Resolution fed to MediaPipe for detection (much smaller = faster)
+# Resolution fed to MediaPipe for detection
 DETECT_W, DETECT_H = 256, 192
 
 # Fixed display size sent to the GUI (avoids expensive per-frame rescaling in tkinter)
